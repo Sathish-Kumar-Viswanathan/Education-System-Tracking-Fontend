@@ -1,0 +1,10 @@
+{
+  "files": ["./src/App.jsx"],
+  "references": [],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
+}
