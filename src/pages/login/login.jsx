@@ -11,6 +11,9 @@ import { Label } from "@/components/ui/label";
 
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 
+// ADDED: import Link for navigation
+import { Link } from "react-router-dom";
+
 export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -104,6 +107,17 @@ export default function Login() {
               {loading && <Loader2 className="animate-spin" size={16} />}
               Login
             </Button>
+
+            {/* ADDED: Registration Link */}
+            <p className="text-center text-sm mt-2">
+              Don't have an account?{" "}
+              <Link
+                to="/register"
+                className="text-blue-600 hover:underline font-medium"
+              >
+                Register here
+              </Link>
+            </p>
           </form>
         </CardContent>
       </Card>
