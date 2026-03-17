@@ -72,7 +72,7 @@ export default function RegistrationPage() {
   return (
     <>
       <Toaster position="top-right" closeButton richColors /> {/* REQUIRED */}
-      <div className="h-200 flex items-center justify-center ">
+      <div className="min-h-screen flex items-center justify-center ">
         <Card className="w-full max-w-md shadow-lg rounded-2xl">
           <CardHeader>
             <CardTitle className="text-2xl text-center">
