@@ -17,9 +17,13 @@ import {
 } from "lucide-react";
 
 import { useForm } from "react-hook-form";
+import StudentAssign from "../studentAssign/studentAssign";
+import AttendanceMark from "../attendanceMark/attendaceMark";
 
 export default function StaffDashboard() {
   const [showProfile, setShowProfile] = useState(false);
+  const [showStudentPopup, setShowStudentPopup] = useState(false);
+  const [showAttendance, setShowAttendance] = useState(false);
   const [step, setStep] = useState(1);
 
   const navigate = useNavigate();
@@ -156,7 +160,10 @@ export default function StaffDashboard() {
           <h2 className="text-xl font-semibold mb-4">Quick Actions</h2>{" "}
           <div className="grid md:grid-cols-4 gap-4">
             {" "}
-            <Card className="cursor-pointer hover:bg-primary hover:text-white transition">
+            <Card
+              className="cursor-pointer hover:bg-primary hover:text-white transition"
+              onClick={() => setShowStudentPopup(true)}
+            >
               {" "}
               <CardContent className="flex flex-col items-center justify-center p-6">
                 {" "}
@@ -164,7 +171,10 @@ export default function StaffDashboard() {
                 <p className="mt-2 font-medium">Add Student</p>{" "}
               </CardContent>{" "}
             </Card>{" "}
-            <Card className="cursor-pointer hover:bg-primary hover:text-white transition">
+            <Card
+              className="cursor-pointer hover:bg-primary hover:text-white transition"
+              onClick={() => setShowAttendance(true)}
+            >
               {" "}
               <CardContent className="flex flex-col items-center justify-center p-6">
                 {" "}
@@ -508,6 +518,34 @@ export default function StaffDashboard() {
             </Card>
           </div>
         )}
+        {/* ⭐ ADDED: Student Assign Popup */}
+        {showStudentPopup && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <Card className="w-full max-w-5xl shadow-2xl relative">
+              {/* Close Button */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-4 top-4"
+                onClick={() => setShowStudentPopup(false)}
+              >
+                <X size={18} />
+              </Button>
+
+              <CardHeader>
+                <CardTitle>Assign Students</CardTitle>
+              </CardHeader>
+
+              <CardContent>
+                <StudentAssign /> {/* ⭐ ADDED */}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+        <AttendanceMark
+          isOpen={showAttendance}
+          onClose={() => setShowAttendance(false)}
+        />
       </div>
     </>
   );
