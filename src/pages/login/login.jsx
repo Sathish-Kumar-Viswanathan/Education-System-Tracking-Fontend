@@ -123,17 +123,6 @@ export default function Login() {
                 {loading && <Loader2 className="animate-spin" size={16} />}
                 Login
               </Button>
-
-              {/* ADDED: Registration Link */}
-              <p className="text-center text-sm mt-2">
-                Don't have an account?{" "}
-                <Link
-                  to="/register"
-                  className="text-blue-600 hover:underline font-medium"
-                >
-                  Register here
-                </Link>
-              </p>
             </form>
           </CardContent>
         </Card>
