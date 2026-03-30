@@ -45,6 +45,8 @@ export default function Login() {
         navigate("/staffDashboard");
       } else if (role === "student") {
         navigate("/studentDashboard");
+      } else if (role === "admin") {
+        navigate("/adminDashboard");
       }
       reset();
     } catch (err) {
