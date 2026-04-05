@@ -14,13 +14,13 @@ import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
-  TableCaption,
   TableCell,
-  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Trash2, UserX } from "lucide-react";
+import { jwtDecode } from "jwt-decode";
 
 import {
   Select,
@@ -32,6 +32,8 @@ import {
 import { registerUser } from "../../services/registration/registration.axios";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { getAllUsers } from "../../services/users/users.axios";
+import { createSubject } from "../../services/subjects/subjects.axios";
+
 const userSchema = z.object({
   name: z.string().min(3, "Name must be at least 3 characters"),
   email: z.string().email("Enter a valid email"),
@@ -65,6 +67,11 @@ export default function AdminDashboard() {
   const [users, setUsers] = useState([]);
   const [timetables, setTimetables] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("active");
+
+  const [error, setError] = useState({});
+  const [isValid, setIsValid] = useState(false);
 
   const {
     register,
@@ -81,6 +88,26 @@ export default function AdminDashboard() {
       role: "",
     },
   });
+
+  const subjectSchema = z.object({
+    subjectName: z
+      .string()
+      .min(3, "Subject must be at least 3 characters")
+      .max(50, "Too long"),
+  });
+
+  const validateField = (value) => {
+    const result = subjectSchema.safeParse({ subjectName: value });
+
+    if (!result.success) {
+      const fieldError = result.error.format().subjectName?._errors[0];
+      setError({ subjectName: fieldError });
+      setIsValid(false);
+    } else {
+      setError({});
+      setIsValid(true);
+    }
+  };
 
   const [userData, setUserData] = useState({
     name: "",
@@ -108,6 +135,7 @@ export default function AdminDashboard() {
       setLoading(true);
       await registerUser(data);
       toast.success("Registration Successful");
+      setShowUserForm(false);
       reset();
     } catch (error) {
       toast.error(error?.response?.data?.message || "Registration Failed");
@@ -121,14 +149,47 @@ export default function AdminDashboard() {
     setShowTimetableForm(false);
   };
 
-  const handleCreateSubject = () => {
+  const handleCreateSubject = async () => {
     if (!subjectName) return;
 
-    setSubjects([...subjects, subjectName]);
-    toast.success("Subject Added");
+    try {
+      // 🔐 Get token
+      const token = localStorage.getItem("token");
+      console.log(token);
 
-    setSubjectName("");
-    setShowSubjectForm(false);
+      if (!token) {
+        toast.error("User not authenticated");
+        return;
+      }
+
+      // 🔓 Decode token
+      const decoded = jwtDecode(token);
+
+      // 🧠 Extract userId (depends on your backend)
+      const userId = decoded.id || decoded._id || decoded.userId;
+
+      // 📦 Create subject object
+      const newSubject = {
+        name: subjectName,
+        createdBy: userId,
+      };
+
+      // 🗂️ Update state
+      setSubjects([...subjects, newSubject]);
+
+      // 📦 Call the API to create the subject
+      const addSubject = await createSubject(newSubject);
+      if (addSubject) {
+        toast.success("Subject Added");
+        setSubjectName("");
+        setShowSubjectForm(false);
+      } else {
+        toast.error("Failed to add subject");
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error("Invalid token");
+    }
   };
 
   const handleOpenUsers = async () => {
@@ -219,7 +280,7 @@ export default function AdminDashboard() {
 
         {/* ================= CREATE USER POPUP ================= */}
         {showUserForm && (
-          <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50">
+          <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50 backdrop-blur-sm p-4">
             <Card className="w-full max-w-xl relative">
               {/* Close Button */}
               <Button
@@ -327,7 +388,7 @@ export default function AdminDashboard() {
         )}
         {/* ================= TIMETABLE POPUP ================= */}
         {showTimetableForm && (
-          <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50">
+          <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50  backdrop-blur-sm p-4">
             <Card className="w-full max-w-5xl relative max-h-[90vh] overflow-auto">
               {/* ❌ CLOSE BUTTON */}
               <Button
@@ -353,7 +414,7 @@ export default function AdminDashboard() {
         )}
 
         {showSubjectForm && (
-          <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50">
+          <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50 backdrop-blur-sm p-4">
             <Card className="w-full max-w-md relative">
               {/* CLOSE */}
               <Button
@@ -372,13 +433,34 @@ export default function AdminDashboard() {
 
               {/* FORM */}
               <CardContent className="space-y-4">
-                <Input
-                  placeholder="Enter Subject Name"
-                  value={subjectName}
-                  onChange={(e) => setSubjectName(e.target.value)}
-                />
+                <div>
+                  <Input
+                    placeholder="Enter Subject Name"
+                    value={subjectName}
+                    onChange={(e) => {
+                      setSubjectName(e.target.value);
+                      validateField(e.target.value);
+                    }}
+                    className={
+                      errors.subjectName
+                        ? "border-red-500 focus-visible:ring-red-500"
+                        : ""
+                    }
+                  />
 
-                <Button className="w-full" onClick={handleCreateSubject}>
+                  {/* ERROR MESSAGE */}
+                  {errors.subjectName && (
+                    <p className="text-sm text-red-500 mt-1">
+                      {errors.subjectName}
+                    </p>
+                  )}
+                </div>
+
+                <Button
+                  className="w-full"
+                  onClick={handleCreateSubject}
+                  disabled={!isValid}
+                >
                   Add Subject
                 </Button>
               </CardContent>
@@ -387,8 +469,9 @@ export default function AdminDashboard() {
         )}
 
         {showUsersList && (
-          <div className="fixed inset-0 bg-black/40 flex justify-center p-4 z-50 w-full">
-            <Card className="w-1/2 relative">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex justify-center items-center p-4 z-50">
+            <Card className="w-full max-w-3xl relative shadow-xl rounded-2xl">
+              {/* CLOSE BUTTON */}
               <Button
                 variant="ghost"
                 size="icon"
@@ -397,46 +480,122 @@ export default function AdminDashboard() {
               >
                 <X size={18} />
               </Button>
+
               <CardHeader>
-                <CardTitle>All Users</CardTitle>
+                <CardTitle className="text-xl font-semibold">
+                  All Users
+                </CardTitle>
               </CardHeader>
 
               <CardContent>
                 {/* SEARCH */}
-                <Input
-                  placeholder="Search user..."
-                  onChange={(e) => setSearch(e.target.value)}
-                />
+                <div className="flex gap-3 mb-4 flex-wrap">
+                  {/* SEARCH */}
+                  <Input
+                    placeholder="Search user..."
+                    className="flex-1"
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+
+                  {/* ROLE FILTER */}
+                  <Select value={roleFilter} onValueChange={setRoleFilter}>
+                    <SelectTrigger className="w-35">
+                      <SelectValue placeholder="Role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="staff">Staff</SelectItem>
+                      <SelectItem value="student">Student</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* STATUS FILTER */}
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-35">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 {/* TABLE */}
-                <table className="w-full mt-4 border text-center">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Email</th>
-                    </tr>
-                  </thead>
+                <div className="border rounded-xl overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-center">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
 
-                  <tbody>
-                    {paginate(
-                      users.filter((u) =>
-                        u.name?.toLowerCase().includes(search.toLowerCase()),
-                      ),
-                    ).map((u, i) => (
-                      <tr key={i}>
-                        <td>{u.name}</td>
-                        <td>{u.email}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    <TableBody>
+                      {paginate(
+                        users
+                          .filter((u) =>
+                            u.name
+                              ?.toLowerCase()
+                              .includes(search.toLowerCase()),
+                          )
+                          .filter((u) =>
+                            roleFilter === "all" ? true : u.role === roleFilter,
+                          )
+                          .filter((u) =>
+                            statusFilter === "active"
+                              ? u.isDelete === false
+                              : u.isDelete === true,
+                          ),
+                      ).map((u, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="font-medium">
+                            {u.name}
+                          </TableCell>
+                          <TableCell>{u.email}</TableCell>
+                          <TableCell>{u.role}</TableCell>
+                          <TableCell>
+                            {u.isDelete === true ? (
+                              <span className="text-red-500">Inactive</span>
+                            ) : (
+                              <span className="text-green-500">Active</span>
+                            )}
+                          </TableCell>
+
+                          {/* ACTION BUTTONS */}
+                          <TableCell className="flex justify-center gap-2">
+                            {/* SOFT DELETE */}
+                            <Button
+                              size="icon"
+                              variant="destructive"
+                              onClick={() => handleSoftDelete(u._id)}
+                            >
+                              <Trash2 size={16} />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
 
                 {/* PAGINATION */}
                 <div className="flex justify-center gap-2 mt-4">
-                  <Button onClick={() => setCurrentPage((p) => p - 1)}>
+                  <Button
+                    variant="outline"
+                    onClick={() => setCurrentPage((p) => p - 1)}
+                  >
                     Prev
                   </Button>
-                  <Button onClick={() => setCurrentPage((p) => p + 1)}>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => setCurrentPage((p) => p + 1)}
+                  >
                     Next
                   </Button>
                 </div>
