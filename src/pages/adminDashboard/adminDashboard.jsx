@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Toaster, toast } from "sonner";
 import { Plus, Calendar, Users, X } from "lucide-react";
 import TimetableForm from "./timeTableForm";
+import TimetableList from "./TimetableList";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -32,7 +33,11 @@ import {
 import { registerUser } from "../../services/registration/registration.axios";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { getAllUsers } from "../../services/users/users.axios";
-import { createSubject } from "../../services/subjects/subjects.axios";
+import {
+  getAllSubjects,
+  createSubject,
+  deleteSubject,
+} from "../../services/subjects/subjects.axios";
 
 const userSchema = z.object({
   name: z.string().min(3, "Name must be at least 3 characters"),
@@ -65,10 +70,10 @@ export default function AdminDashboard() {
   const itemsPerPage = 5;
 
   const [users, setUsers] = useState([]);
-  const [timetables, setTimetables] = useState([]);
   const [loading, setLoading] = useState(false);
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("active");
+  const [subjectStatusFilter, setSubjectStatusFilter] = useState("all");
 
   const [error, setError] = useState({});
   const [isValid, setIsValid] = useState(false);
@@ -202,6 +207,30 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleOpenSubjects = async () => {
+    try {
+      const data = await getAllSubjects();
+      console.log(data);
+
+      setSubjects(data);
+      setShowSubjectsList(true);
+    } catch (err) {
+      toast.error("Failed to fetch subjects");
+    }
+  };
+
+  const handleDeleteSubject = async (id) => {
+    try {
+      await deleteSubject(id);
+      toast.success("Subject deleted successfully");
+      // Refresh the list
+      const data = await getAllSubjects();
+      setSubjects(data);
+    } catch (err) {
+      toast.error("Failed to delete subject");
+    }
+  };
+
   return (
     <>
       <Toaster position="top-right" richColors="true" closeButton="true" />
@@ -258,7 +287,7 @@ export default function AdminDashboard() {
           {/* VIEW SUBJECTS */}
           <Card
             className="cursor-pointer hover:bg-primary hover:text-white transition"
-            onClick={() => setShowSubjectsList(true)}
+            onClick={handleOpenSubjects}
           >
             <CardContent className="flex flex-col items-center justify-center p-10">
               <Plus size={40} />
@@ -605,8 +634,9 @@ export default function AdminDashboard() {
         )}
 
         {showSubjectsList && (
-          <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50">
-            <Card className="w-full max-w-md relative">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex justify-center items-center p-4 z-50">
+            <Card className="w-full max-w-3xl relative shadow-xl rounded-2xl">
+              {/* CLOSE BUTTON */}
               <Button
                 variant="ghost"
                 size="icon"
@@ -615,33 +645,123 @@ export default function AdminDashboard() {
               >
                 <X size={18} />
               </Button>
+
               <CardHeader>
-                <CardTitle>All Subjects</CardTitle>
+                <CardTitle className="text-xl font-semibold">
+                  All Subjects
+                </CardTitle>
               </CardHeader>
 
               <CardContent>
-                <Input
-                  placeholder="Search subject..."
-                  onChange={(e) => setSearch(e.target.value)}
-                />
+                {/* SEARCH */}
+                <div className="flex gap-3 mb-4 flex-wrap">
+                  <Input
+                    placeholder="Search subject..."
+                    className="flex-1"
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
 
-                <ul className="mt-4">
-                  {paginate(
-                    subjects.filter((s) =>
-                      s.toLowerCase().includes(search.toLowerCase()),
-                    ),
-                  ).map((s, i) => (
-                    <li key={i} className="border p-2">
-                      {s}
-                    </li>
-                  ))}
-                </ul>
+                  {/* STATUS FILTER */}
+                  <Select
+                    value={subjectStatusFilter}
+                    onValueChange={setSubjectStatusFilter}
+                  >
+                    <SelectTrigger className="w-35">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
+                {/* TABLE */}
+                <div className="border rounded-xl overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Subject Name</TableHead>
+                        <TableHead>Created By</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-center">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+
+                    <TableBody>
+                      {paginate(
+                        subjects
+                          .filter((s) =>
+                            s.subjectName
+                              ?.toLowerCase()
+                              .includes(search.toLowerCase()),
+                          )
+                          .filter((s) =>
+                            subjectStatusFilter === "all"
+                              ? true
+                              : subjectStatusFilter === "active"
+                                ? s.isDelete === false
+                                : s.isDelete === true,
+                          ),
+                      ).map((s, i) => (
+                        <TableRow key={s._id || i}>
+                          <TableCell className="font-medium">
+                            {s.subjectName}
+                          </TableCell>
+                          <TableCell>{s.creatorName || "Unknown"}</TableCell>
+                          <TableCell>
+                            {s.isDelete === true ? (
+                              <span className="text-red-500">Inactive</span>
+                            ) : (
+                              <span className="text-green-500">Active</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Button
+                              size="icon"
+                              variant="destructive"
+                              onClick={() => handleDeleteSubject(s._id)}
+                            >
+                              <Trash2 size={16} />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* PAGINATION */}
                 <div className="flex justify-center gap-2 mt-4">
-                  <Button onClick={() => setCurrentPage((p) => p - 1)}>
+                  <Button
+                    variant="outline"
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                  >
                     Prev
                   </Button>
-                  <Button onClick={() => setCurrentPage((p) => p + 1)}>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => setCurrentPage((p) => p + 1)}
+                    disabled={
+                      currentPage * itemsPerPage >=
+                      subjects
+                        .filter((s) =>
+                          s.subjectName
+                            ?.toLowerCase()
+                            .includes(search.toLowerCase()),
+                        )
+                        .filter((s) =>
+                          subjectStatusFilter === "all"
+                            ? true
+                            : subjectStatusFilter === "active"
+                              ? s.isDelete === false
+                              : s.isDelete === true,
+                        ).length
+                    }
+                  >
                     Next
                   </Button>
                 </div>
@@ -651,53 +771,18 @@ export default function AdminDashboard() {
         )}
 
         {showTimetableList && (
-          <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50">
-            <Card className="w-full max-w-md relative">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex justify-center items-center p-2 z-50">
+            <Card className="w-full h-full max-w-none relative shadow-xl rounded-none max-h-none overflow-hidden">
               <Button
                 variant="ghost"
                 size="icon"
-                className="absolute right-4 top-4"
+                className="absolute right-4 top-4 z-10"
                 onClick={() => setShowTimetableList(false)}
               >
                 <X size={18} />
               </Button>
-              <CardHeader>
-                <CardTitle>All Timetables</CardTitle>
-              </CardHeader>
 
-              <CardContent>
-                <Input
-                  placeholder="Search department..."
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-
-                {paginate(
-                  timetables.filter((t) =>
-                    t.department?.toLowerCase().includes(search.toLowerCase()),
-                  ),
-                ).map((t, i) => (
-                  <div key={i} className="border p-4 mt-4">
-                    <p>
-                      <b>Dept:</b> {t.department}
-                    </p>
-                    <p>
-                      <b>Year:</b> {t.yearOfStudy}
-                    </p>
-                    <p>
-                      <b>Semester:</b> {t.semester}
-                    </p>
-                  </div>
-                ))}
-
-                <div className="flex justify-center gap-2 mt-4">
-                  <Button onClick={() => setCurrentPage((p) => p - 1)}>
-                    Prev
-                  </Button>
-                  <Button onClick={() => setCurrentPage((p) => p + 1)}>
-                    Next
-                  </Button>
-                </div>
-              </CardContent>
+              <TimetableList onClose={() => setShowTimetableList(false)} />
             </Card>
           </div>
         )}

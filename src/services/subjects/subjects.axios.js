@@ -12,3 +12,8 @@ export const createSubject = async (subjectData) => {
   );
   return response.data;
 };
+
+export const deleteSubject = async (id) => {
+  const response = await axiosInstance.delete(`/subjects/delete/${id}`);
+  return response.data;
+};
