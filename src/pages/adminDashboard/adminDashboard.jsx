@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Trash2, UserX } from "lucide-react";
+import { Trash2, UserX, RotateCcw, Edit2 } from "lucide-react";
 import { jwtDecode } from "jwt-decode";
 
 import {
@@ -32,11 +32,18 @@ import {
 } from "@/components/ui/select";
 import { registerUser } from "../../services/registration/registration.axios";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
-import { getAllUsers } from "../../services/users/users.axios";
+import {
+  getAllUsers,
+  softDeleteUser,
+  restoreUser,
+  updateUser,
+} from "../../services/users/users.axios";
 import {
   getAllSubjects,
   createSubject,
   deleteSubject,
+  restoreSubject,
+  updateSubject,
 } from "../../services/subjects/subjects.axios";
 
 const userSchema = z.object({
@@ -48,7 +55,9 @@ const userSchema = z.object({
     .max(16, "Password must be at most 16 characters")
     .regex(/[A-Z]/, "Must contain at least 1 uppercase letter")
     .regex(/[0-9]/, "Must contain at least 1 number")
-    .regex(/[^A-Za-z0-9]/, "Must contain at least 1 special character"),
+    .regex(/[^A-Za-z0-9]/, "Must contain at least 1 special character")
+    .optional()
+    .or(z.literal("")),
   role: z.enum(["student", "staff", "admin"], {
     required_error: "Role is required",
   }),
@@ -72,8 +81,20 @@ export default function AdminDashboard() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [roleFilter, setRoleFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("active");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [subjectStatusFilter, setSubjectStatusFilter] = useState("all");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [userIdToDelete, setUserIdToDelete] = useState(null);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [userIdToRestore, setUserIdToRestore] = useState(null);
+  const [showSubjectDeleteConfirm, setShowSubjectDeleteConfirm] =
+    useState(false);
+  const [subjectIdToDelete, setSubjectIdToDelete] = useState(null);
+  const [showSubjectRestoreConfirm, setShowSubjectRestoreConfirm] =
+    useState(false);
+  const [subjectIdToRestore, setSubjectIdToRestore] = useState(null);
+  const [editingUser, setEditingUser] = useState(null);
+  const [editingSubject, setEditingSubject] = useState(null);
 
   const [error, setError] = useState({});
   const [isValid, setIsValid] = useState(false);
@@ -138,12 +159,24 @@ export default function AdminDashboard() {
   const onSubmit = async (data) => {
     try {
       setLoading(true);
-      await registerUser(data);
-      toast.success("Registration Successful");
+      if (editingUser) {
+        // Update existing user
+        const { password, ...updateData } = data;
+        await updateUser(editingUser._id, updateData);
+        toast.success("User updated successfully");
+      } else {
+        // Create new user
+        await registerUser(data);
+        toast.success("User created successfully");
+      }
       setShowUserForm(false);
+      setEditingUser(null);
       reset();
+      // Refresh the users list
+      const updatedUsers = await getAllUsers();
+      setUsers(updatedUsers);
     } catch (error) {
-      toast.error(error?.response?.data?.message || "Registration Failed");
+      toast.error(error?.response?.data?.message || "Operation failed");
     } finally {
       setLoading(false);
     }
@@ -219,15 +252,91 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleDeleteSubject = async (id) => {
+  const handleDeleteSubject = (id) => {
+    setSubjectIdToDelete(id);
+    setShowSubjectDeleteConfirm(true);
+  };
+
+  const confirmDeleteSubject = async () => {
     try {
-      await deleteSubject(id);
+      setLoading(true);
+      await deleteSubject(subjectIdToDelete);
       toast.success("Subject deleted successfully");
+      setShowSubjectDeleteConfirm(false);
+      setSubjectIdToDelete(null);
       // Refresh the list
       const data = await getAllSubjects();
       setSubjects(data);
     } catch (err) {
-      toast.error("Failed to delete subject");
+      toast.error(err?.response?.data?.message || "Failed to delete subject");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRestoreSubject = (id) => {
+    setSubjectIdToRestore(id);
+    setShowSubjectRestoreConfirm(true);
+  };
+
+  const confirmRestoreSubject = async () => {
+    try {
+      setLoading(true);
+      await restoreSubject(subjectIdToRestore);
+      toast.success("Subject restored successfully");
+      setShowSubjectRestoreConfirm(false);
+      setSubjectIdToRestore(null);
+      // Refresh the list
+      const data = await getAllSubjects();
+      setSubjects(data);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to restore subject");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSoftDelete = (userId) => {
+    setUserIdToDelete(userId);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDelete = async () => {
+    try {
+      setLoading(true);
+      await softDeleteUser(userIdToDelete);
+      toast.success("User deleted successfully");
+      setShowDeleteConfirm(false);
+      setUserIdToDelete(null);
+      // Refresh the users list
+      const data = await getAllUsers();
+      setUsers(data);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to delete user");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRestore = (userId) => {
+    setUserIdToRestore(userId);
+    setShowRestoreConfirm(true);
+  };
+
+  const confirmRestore = async () => {
+    try {
+      setLoading(true);
+      await restoreUser(userIdToRestore);
+      toast.success("User restored successfully");
+      setShowRestoreConfirm(false);
+      setUserIdToRestore(null);
+      // Refresh the users list
+      const data = await getAllUsers();
+      setUsers(data);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to restore user");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -545,6 +654,7 @@ export default function AdminDashboard() {
                       <SelectValue placeholder="Status" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
                       <SelectItem value="active">Active</SelectItem>
                       <SelectItem value="inactive">Inactive</SelectItem>
                     </SelectContent>
@@ -576,9 +686,11 @@ export default function AdminDashboard() {
                             roleFilter === "all" ? true : u.role === roleFilter,
                           )
                           .filter((u) =>
-                            statusFilter === "active"
-                              ? u.isDelete === false
-                              : u.isDelete === true,
+                            statusFilter === "all"
+                              ? true
+                              : statusFilter === "active"
+                                ? u.isDelete === false
+                                : u.isDelete === true,
                           ),
                       ).map((u, i) => (
                         <TableRow key={i}>
@@ -597,14 +709,25 @@ export default function AdminDashboard() {
 
                           {/* ACTION BUTTONS */}
                           <TableCell className="flex justify-center gap-2">
-                            {/* SOFT DELETE */}
-                            <Button
-                              size="icon"
-                              variant="destructive"
-                              onClick={() => handleSoftDelete(u._id)}
-                            >
-                              <Trash2 size={16} />
-                            </Button>
+                            {u.isDelete === false ? (
+                              /* SOFT DELETE - for active users */
+                              <Button
+                                size="icon"
+                                variant="destructive"
+                                onClick={() => handleSoftDelete(u._id)}
+                              >
+                                <Trash2 size={16} />
+                              </Button>
+                            ) : (
+                              /* RESTORE - for deleted users */
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                onClick={() => handleRestore(u._id)}
+                              >
+                                <RotateCcw size={16} />
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -718,13 +841,25 @@ export default function AdminDashboard() {
                             )}
                           </TableCell>
                           <TableCell className="text-center">
-                            <Button
-                              size="icon"
-                              variant="destructive"
-                              onClick={() => handleDeleteSubject(s._id)}
-                            >
-                              <Trash2 size={16} />
-                            </Button>
+                            {s.isDelete === false ? (
+                              /* DELETE - for active subjects */
+                              <Button
+                                size="icon"
+                                variant="destructive"
+                                onClick={() => handleDeleteSubject(s._id)}
+                              >
+                                <Trash2 size={16} />
+                              </Button>
+                            ) : (
+                              /* RESTORE - for deleted subjects */
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                onClick={() => handleRestoreSubject(s._id)}
+                              >
+                                <RotateCcw size={16} />
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -783,6 +918,185 @@ export default function AdminDashboard() {
               </Button>
 
               <TimetableList onClose={() => setShowTimetableList(false)} />
+            </Card>
+          </div>
+        )}
+
+        {/* DELETE CONFIRMATION DIALOG */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex justify-center items-center p-4 z-50">
+            <Card className="w-full max-w-sm">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold text-center">
+                  Delete User
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-center">
+                <p className="text-muted-foreground mb-6">
+                  Are you sure you want to delete this user? This action cannot
+                  be undone.
+                </p>
+                <div className="flex gap-3 justify-center">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowDeleteConfirm(false);
+                      setUserIdToDelete(null);
+                    }}
+                    disabled={loading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={confirmDelete}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 size={16} className="mr-2 animate-spin" />
+                        Deleting...
+                      </>
+                    ) : (
+                      "Delete"
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* RESTORE CONFIRMATION DIALOG */}
+        {showRestoreConfirm && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex justify-center items-center p-4 z-50">
+            <Card className="w-full max-w-sm">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold text-center">
+                  Restore User
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-center">
+                <p className="text-muted-foreground mb-6">
+                  Are you sure you want to restore this user to active status?
+                </p>
+                <div className="flex gap-3 justify-center">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowRestoreConfirm(false);
+                      setUserIdToRestore(null);
+                    }}
+                    disabled={loading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="default"
+                    onClick={confirmRestore}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 size={16} className="mr-2 animate-spin" />
+                        Restoring...
+                      </>
+                    ) : (
+                      "Restore"
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* SUBJECT DELETE CONFIRMATION DIALOG */}
+        {showSubjectDeleteConfirm && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex justify-center items-center p-4 z-50">
+            <Card className="w-full max-w-sm">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold text-center">
+                  Delete Subject
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-center">
+                <p className="text-muted-foreground mb-6">
+                  Are you sure you want to delete this subject? This action
+                  cannot be undone.
+                </p>
+                <div className="flex gap-3 justify-center">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowSubjectDeleteConfirm(false);
+                      setSubjectIdToDelete(null);
+                    }}
+                    disabled={loading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={confirmDeleteSubject}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 size={16} className="mr-2 animate-spin" />
+                        Deleting...
+                      </>
+                    ) : (
+                      "Delete"
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* SUBJECT RESTORE CONFIRMATION DIALOG */}
+        {showSubjectRestoreConfirm && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex justify-center items-center p-4 z-50">
+            <Card className="w-full max-w-sm">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold text-center">
+                  Restore Subject
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-center">
+                <p className="text-muted-foreground mb-6">
+                  Are you sure you want to restore this subject to active
+                  status?
+                </p>
+                <div className="flex gap-3 justify-center">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowSubjectRestoreConfirm(false);
+                      setSubjectIdToRestore(null);
+                    }}
+                    disabled={loading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="default"
+                    onClick={confirmRestoreSubject}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 size={16} className="mr-2 animate-spin" />
+                        Restoring...
+                      </>
+                    ) : (
+                      "Restore"
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
             </Card>
           </div>
         )}
