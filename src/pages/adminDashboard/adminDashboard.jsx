@@ -1,9 +1,10 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Toaster, toast } from "sonner";
-import { Plus, Calendar, Users, X } from "lucide-react";
+import { Plus, Calendar, Users, X, LogOut } from "lucide-react";
 import TimetableForm from "./timeTableForm";
 import TimetableList from "./TimetableList";
 import { useForm } from "react-hook-form";
@@ -46,24 +47,46 @@ import {
   updateSubject,
 } from "../../services/subjects/subjects.axios";
 
-const userSchema = z.object({
-  name: z.string().min(3, "Name must be at least 3 characters"),
-  email: z.string().email("Enter a valid email"),
-  password: z
-    .string()
-    .min(8, "Password must be at least 8 characters")
-    .max(16, "Password must be at most 16 characters")
-    .regex(/[A-Z]/, "Must contain at least 1 uppercase letter")
-    .regex(/[0-9]/, "Must contain at least 1 number")
-    .regex(/[^A-Za-z0-9]/, "Must contain at least 1 special character")
-    .optional()
-    .or(z.literal("")),
-  role: z.enum(["student", "staff", "admin"], {
-    required_error: "Role is required",
-  }),
-});
+const userSchema = z
+  .object({
+    name: z.string().min(3, "Name must be at least 3 characters"),
+    email: z.string().email("Enter a valid email"),
+    password: z
+      .string()
+      .min(8, "Password must be at least 8 characters")
+      .max(16, "Password must be at most 16 characters")
+      .regex(/[A-Z]/, "Must contain at least 1 uppercase letter")
+      .regex(/[0-9]/, "Must contain at least 1 number")
+      .regex(/[^A-Za-z0-9]/, "Must contain at least 1 special character")
+      .optional()
+      .or(z.literal("")),
+    role: z.enum(["student", "staff", "admin"], {
+      required_error: "Role is required",
+    }),
+    rollNumber: z.string().optional(),
+    yearOfStudy: z.string().optional(),
+    department: z.string().optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.role === "student" && !data.rollNumber?.trim()) {
+        return false;
+      }
+      if (data.role === "student" && !data.yearOfStudy?.trim()) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "This field is required for students",
+      path: ["yearOfStudy"],
+    },
+  );
 
 export default function AdminDashboard() {
+  // ⭐ HOOKS
+  const navigate = useNavigate();
+
   // ⭐ STATE
   const [showUserForm, setShowUserForm] = useState(false);
   const [showTimetableForm, setShowTimetableForm] = useState(false);
@@ -104,6 +127,7 @@ export default function AdminDashboard() {
     handleSubmit,
     setValue,
     reset,
+    watch,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(userSchema),
@@ -112,6 +136,9 @@ export default function AdminDashboard() {
       email: "",
       password: "",
       role: "",
+      rollNumber: "",
+      yearOfStudy: "",
+      department: "",
     },
   });
 
@@ -340,13 +367,30 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    toast.success("Logged out successfully");
+    navigate("/");
+  };
+
   return (
     <>
       <Toaster position="top-right" richColors="true" closeButton="true" />
 
       <div className="p-6 space-y-6 bg-muted/40 min-h-screen">
         {/* HEADER */}
-        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+        <div className="flex justify-between items-center">
+          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+          <Button
+            onClick={handleLogout}
+            variant="destructive"
+            className="flex items-center gap-2"
+          >
+            <LogOut size={18} />
+            Logout
+          </Button>
+        </div>
 
         {/* ACTION CARDS */}
         <div className="grid md:grid-cols-3 gap-6">
@@ -496,7 +540,17 @@ export default function AdminDashboard() {
                   {/* Role */}
                   <div className="space-y-1">
                     <Label>Role</Label>
-                    <Select onValueChange={(value) => setValue("role", value)}>
+                    <Select
+                      onValueChange={(value) => {
+                        setValue("role", value);
+                        // Auto-set department to MCA for students
+                        if (value === "student") {
+                          setValue("department", "MCA");
+                        } else {
+                          setValue("department", "");
+                        }
+                      }}
+                    >
                       <SelectTrigger
                         className={`w-full ${errors.role ? "border-red-500 focus:ring-red-500" : ""}`}
                       >
@@ -514,6 +568,77 @@ export default function AdminDashboard() {
                       </p>
                     )}
                   </div>
+
+                  {/* Department - Only for Students */}
+                  {watch("role") === "student" && (
+                    <div className="space-y-1">
+                      <Label>Department *</Label>
+                      <Select
+                        value={watch("department") || ""}
+                        onValueChange={(value) => setValue("department", value)}
+                      >
+                        <SelectTrigger
+                          className={`w-full ${errors.department ? "border-red-500 focus:ring-red-500" : ""}`}
+                        >
+                          <SelectValue placeholder="Select department" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="MCA">MCA</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {errors.department && (
+                        <p className="text-sm text-red-500">
+                          {errors.department.message}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Roll Number - Only for Students */}
+                  {watch("role") === "student" && (
+                    <div className="space-y-1">
+                      <Label>Roll Number *</Label>
+                      <Input
+                        placeholder="Enter roll number"
+                        {...register("rollNumber")}
+                        className={errors.rollNumber ? "border-red-500" : ""}
+                      />
+                      {errors.rollNumber && (
+                        <p className="text-sm text-red-500">
+                          {errors.rollNumber.message}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Year of Study - Only for Students */}
+                  {watch("role") === "student" && (
+                    <div className="space-y-1">
+                      <Label>Year of Study *</Label>
+                      <Select
+                        onValueChange={(value) =>
+                          setValue("yearOfStudy", value)
+                        }
+                      >
+                        <SelectTrigger
+                          className={`w-full ${errors.yearOfStudy ? "border-red-500 focus:ring-red-500" : ""}`}
+                        >
+                          <SelectValue placeholder="Select year" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="First Year">First Year</SelectItem>
+                          <SelectItem value="Second Year">
+                            Second Year
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {errors.yearOfStudy && (
+                        <p className="text-sm text-red-500">
+                          {errors.yearOfStudy.message}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {/* Submit */}
                   <Button type="submit" className="w-full">
