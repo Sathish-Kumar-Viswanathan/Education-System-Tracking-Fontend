@@ -1,5 +1,17 @@
 import axiosInstance from "../config/axios.config";
 
+export const getAssignmentFileUrl = (fileUrl) => {
+  if (!fileUrl) return "";
+  if (fileUrl.startsWith("http") || fileUrl.startsWith("data:")) {
+    return fileUrl;
+  }
+
+  const apiBaseUrl = axiosInstance.defaults.baseURL || "";
+  const serverBaseUrl = apiBaseUrl.replace(/\/api\/?$/, "");
+
+  return `${serverBaseUrl}${fileUrl.startsWith("/") ? fileUrl : `/${fileUrl}`}`;
+};
+
 export const createAssignment = async (assignmentData) => {
   const response = await axiosInstance.post(
     "/assignments/create-assignment",
@@ -25,6 +37,19 @@ export const getAssignmentById = async (id) => {
   return response.data;
 };
 
+export const getStudentAssignmentsByUserId = async (userId, filters = {}) => {
+  const params = new URLSearchParams();
+  if (filters.status) params.append("status", filters.status);
+
+  const queryString = params.toString();
+  const response = await axiosInstance.get(
+    queryString
+      ? `/assignments/student/user/${userId}?${queryString}`
+      : `/assignments/student/user/${userId}`
+  );
+  return response.data;
+};
+
 export const updateAssignment = async (id, assignmentData) => {
   const response = await axiosInstance.put(
     `/assignments/update/${id}`,
@@ -46,6 +71,22 @@ export const restoreAssignment = async (id) => {
 export const getAssignmentSubmissions = async (assignmentId) => {
   const response = await axiosInstance.get(
     `/assignments/submissions/${assignmentId}`
+  );
+  return response.data;
+};
+
+export const submitAssignment = async (submissionData) => {
+  const response = await axiosInstance.post(
+    "/assignments/submissions/submit",
+    submissionData
+  );
+  return response.data;
+};
+
+export const gradeSubmission = async (submissionId, gradeData) => {
+  const response = await axiosInstance.put(
+    `/assignments/submissions/grade/${submissionId}`,
+    gradeData
   );
   return response.data;
 };

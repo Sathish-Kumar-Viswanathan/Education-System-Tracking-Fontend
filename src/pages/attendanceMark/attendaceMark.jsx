@@ -25,6 +25,7 @@ export default function AttendanceMark({ isOpen, onClose }) {
     new Date().toISOString().split("T")[0],
   );
   const [selectedSubject, setSelectedSubject] = useState("");
+  const [selectedSemester, setSelectedSemester] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState("");
   const [selectedYear, setSelectedYear] = useState("");
   const [selectedPeriod, setSelectedPeriod] = useState("");
@@ -34,6 +35,7 @@ export default function AttendanceMark({ isOpen, onClose }) {
   const [departments, setDepartments] = useState([]);
 
   const yearOptions = ["Year 1", "Year 2"];
+  const semesterOptions = ["1", "2", "3", "4"];
 
   // Get staff ID from token
   useEffect(() => {
@@ -120,6 +122,11 @@ export default function AttendanceMark({ isOpen, onClose }) {
       return;
     }
 
+    if (!selectedSemester) {
+      toast.error("Please select a semester");
+      return;
+    }
+
     if (!selectedDepartment) {
       toast.error("Please select a department");
       return;
@@ -157,6 +164,7 @@ export default function AttendanceMark({ isOpen, onClose }) {
         studentId: student._id,
         staffId: staffId,
         subject: selectedSubject,
+        semester: selectedSemester,
         date: new Date(selectedDate),
         period: Number(selectedPeriod),
         status: studentAttendanceData[student._id],
@@ -172,6 +180,7 @@ export default function AttendanceMark({ isOpen, onClose }) {
       // Reset form
       setStudentAttendanceData({});
       setSelectedSubject("");
+      setSelectedSemester("");
       setSelectedDepartment("");
       setSelectedYear("");
       setSelectedPeriod("");
@@ -209,7 +218,27 @@ export default function AttendanceMark({ isOpen, onClose }) {
 
         <CardContent className="space-y-6">
           {/* Filters Section */}
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 p-4 bg-muted/50 rounded-lg">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-4 p-4 bg-muted/50 rounded-lg">
+            {/* Semester Select */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Semester *</label>
+              <Select
+                value={selectedSemester}
+                onValueChange={setSelectedSemester}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select sem" />
+                </SelectTrigger>
+                <SelectContent>
+                  {semesterOptions.map((semester) => (
+                    <SelectItem key={semester} value={semester}>
+                      Sem {semester}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Date Picker */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Date</label>

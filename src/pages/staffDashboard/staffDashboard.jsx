@@ -14,6 +14,7 @@ import {
   FileText,
   Send,
   Eye,
+  Upload,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,7 +39,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { jwtDecode } from "jwt-decode";
 
-import { getAllStudents } from "../../services/students/students.axios";
+import {
+  getAllStudents,
+  updateStudent,
+} from "../../services/students/students.axios";
 import { getAllUsers } from "../../services/users/users.axios";
 import { getAllSubjects } from "../../services/subjects/subjects.axios";
 import {
@@ -47,6 +51,8 @@ import {
   updateAssignment,
   softDeleteAssignment,
   getAllSubmissions,
+  getAssignmentFileUrl,
+  gradeSubmission,
 } from "../../services/assignments/assignments.axios";
 import {
   createBatchAttendance,
@@ -97,6 +103,7 @@ export default function StaffDashboard() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showStudentDetails, setShowStudentDetails] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [activeSection, setActiveSection] = useState("students");
   const [showAttendanceForm, setShowAttendanceForm] = useState(false);
   const [editingAttendance, setEditingAttendance] = useState(null);
   const [editAttendanceStatus, setEditAttendanceStatus] = useState("");
@@ -104,9 +111,23 @@ export default function StaffDashboard() {
     new Date().toISOString().split("T")[0],
   );
   const [attendanceSubject, setAttendanceSubject] = useState("");
+  const [attendanceSemester, setAttendanceSemester] = useState("");
   const [attendanceYear, setAttendanceYear] = useState("");
   const [attendancePeriod, setAttendancePeriod] = useState("");
   const [studentAttendanceData, setStudentAttendanceData] = useState({});
+  const [selectedMarksStudentId, setSelectedMarksStudentId] = useState("");
+  const [selectedMarksYear, setSelectedMarksYear] = useState("");
+  const [selectedMarksSemester, setSelectedMarksSemester] = useState("Sem 1");
+  const [selectedMarksSubject, setSelectedMarksSubject] = useState("");
+  const [marksForm, setMarksForm] = useState({
+    internalOneMark: "",
+    internalTwoMark: "",
+    internalThreeMark: "",
+    semesterMark: "",
+  });
+  const [marksEditMode, setMarksEditMode] = useState(false);
+  const [editingSubmissionMarks, setEditingSubmissionMarks] = useState({});
+  const [submissionMarks, setSubmissionMarks] = useState({});
   const itemsPerPage = 5;
 
   const {
@@ -165,6 +186,55 @@ export default function StaffDashboard() {
         .map((year) => String(year).trim()),
     ),
   ];
+  const attendanceSemesterOptions = ["1", "2", "3", "4"];
+  const getSemesterNumber = (semester) =>
+    String(semester ?? "").replace(/\D/g, "");
+  const getYearNumber = (year) => {
+    const normalizedYear = normalizeFilterValue(year);
+
+    if (normalizedYear.includes("first")) return "1";
+    if (normalizedYear.includes("second")) return "2";
+
+    return String(year ?? "").replace(/\D/g, "");
+  };
+  const attendanceSubjects = attendanceSemester
+    ? subjects.filter(
+        (subject) => String(subject.semester) === String(attendanceSemester),
+      )
+    : [];
+  const marksYearOptions = ["First Year", "Second Year"];
+  const marksSemesterOptions = [
+    ...new Set([
+      ...subjects
+        .map((subject) => getSemesterNumber(subject.semester))
+        .filter(Boolean)
+        .map((semester) => `Sem ${semester}`),
+      "Sem 1",
+      "Sem 2",
+    ]),
+  ].sort((a, b) => Number(getSemesterNumber(a)) - Number(getSemesterNumber(b)));
+  const marksSubjects = subjects.filter(
+    (subject) =>
+      getYearNumber(subject.yearOfStudy) === getYearNumber(selectedMarksYear) &&
+      getSemesterNumber(subject.semester) ===
+      getSemesterNumber(selectedMarksSemester),
+  );
+
+  const handleAttendanceSemesterChange = (semester) => {
+    setAttendanceSemester(semester);
+    setAttendanceSubject("");
+  };
+
+  const handleMarksYearChange = (year) => {
+    setSelectedMarksYear(year);
+    setSelectedMarksStudentId("");
+    setSelectedMarksSubject("");
+  };
+
+  const handleMarksSemesterChange = (semester) => {
+    setSelectedMarksSemester(semester);
+    setSelectedMarksSubject("");
+  };
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -218,7 +288,31 @@ export default function StaffDashboard() {
       // Fetch all subjects
       try {
         const subjectsData = await getAllSubjects();
-        setSubjects(subjectsData.subjects || subjectsData);
+        const subjectList = subjectsData.subjects || subjectsData;
+        const usersData = await getAllUsers();
+        const currentStaff = usersData.find(
+          (user) =>
+            user._id === currentStaffId &&
+            (user.role === "staff" || user.role === "coordinator"),
+        );
+        const assignedSubjectIds =
+          currentStaff?.assignedSubjects
+            ?.filter(Boolean)
+            .map((assignment) => {
+              if (typeof assignment === "string") return assignment;
+              if (assignment.subject) {
+                return assignment.subject._id || assignment.subject;
+              }
+
+              return assignment._id;
+            }) || [];
+
+        setSubjects(
+          subjectList.filter(
+            (subject) =>
+              !subject.isDelete && assignedSubjectIds.includes(subject._id),
+          ),
+        );
       } catch (err) {
         console.error("Error fetching subjects:", err);
         toast.error("Failed to fetch subjects");
@@ -350,8 +444,14 @@ export default function StaffDashboard() {
   };
 
   const handleMarkAttendance = async () => {
-    if (!attendanceDate || !attendanceSubject || !attendanceYear || !attendancePeriod) {
-      toast.error("Please select date, year, subject, and period");
+    if (
+      !attendanceDate ||
+      !attendanceSubject ||
+      !attendanceSemester ||
+      !attendanceYear ||
+      !attendancePeriod
+    ) {
+      toast.error("Please select date, year, semester, subject, and period");
       return;
     }
 
@@ -370,6 +470,7 @@ export default function StaffDashboard() {
           studentId: student._id,
           staffId: staffId,
           subject: attendanceSubject,
+          semester: attendanceSemester,
           date: new Date(attendanceDate),
           period: Number(attendancePeriod),
           status: studentAttendanceData[student._id],
@@ -400,6 +501,7 @@ export default function StaffDashboard() {
     setStudentAttendanceData({});
     setAttendanceDate(new Date().toISOString().split("T")[0]);
     setAttendanceSubject("");
+    setAttendanceSemester("");
     setAttendanceYear("");
     setAttendancePeriod("");
   };
@@ -442,9 +544,218 @@ export default function StaffDashboard() {
     setShowStudentDetails(true);
   };
 
+  const selectedMarksStudent = students.find(
+    (item) => String(item._id) === String(selectedMarksStudentId),
+  );
+  const selectedAcademicMarks = selectedMarksStudent?.academicMarks?.find(
+    (mark) =>
+      mark.subject === selectedMarksSubject &&
+      getSemesterNumber(mark.semester) ===
+        getSemesterNumber(selectedMarksSemester),
+  );
+  const isUpdatingAcademicMarks = Boolean(selectedAcademicMarks);
+
+  useEffect(() => {
+    if (!selectedMarksStudentId) {
+      return;
+    }
+
+    setMarksForm({
+      internalOneMark:
+        selectedAcademicMarks?.internalOneMark ??
+        (selectedMarksSubject ? "" : selectedMarksStudent?.internalOneMark ?? ""),
+      internalTwoMark:
+        selectedAcademicMarks?.internalTwoMark ??
+        (selectedMarksSubject ? "" : selectedMarksStudent?.internalTwoMark ?? ""),
+      internalThreeMark:
+        selectedAcademicMarks?.internalThreeMark ??
+        (selectedMarksSubject
+          ? ""
+          : selectedMarksStudent?.internalThreeMark ?? ""),
+      semesterMark:
+        selectedAcademicMarks?.semesterMark ??
+        (selectedMarksSubject ? "" : selectedMarksStudent?.semesterMark ?? ""),
+    });
+  }, [
+    selectedMarksStudentId,
+    selectedMarksSubject,
+    selectedMarksSemester,
+    selectedMarksStudent,
+    selectedAcademicMarks,
+  ]);
+
+  useEffect(() => {
+    setMarksEditMode(false);
+    setEditingSubmissionMarks({});
+    setSubmissionMarks({});
+  }, [selectedMarksStudentId, selectedMarksSubject, selectedMarksSemester]);
+
   const closeStudentDetails = () => {
     setShowStudentDetails(false);
     setSelectedStudent(null);
+  };
+
+  const handleMarksStudentChange = (studentId) => {
+    setSelectedMarksStudentId(studentId);
+  };
+
+  const handleMarksFormChange = (field, value) => {
+    setMarksForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleSubmissionMarkChange = (submissionId, value) => {
+    setSubmissionMarks((prev) => ({
+      ...prev,
+      [submissionId]: value,
+    }));
+  };
+
+  const handleUploadSubmissionMark = async (submission) => {
+    if (!selectedMarksYear) {
+      toast.error("Please select a year");
+      return;
+    }
+
+    const marks = submissionMarks[submission._id] ?? submission.marks ?? "";
+    const numericMarks = Number(marks);
+
+    if (marks === "" || Number.isNaN(numericMarks)) {
+      toast.error("Please enter a valid assignment mark");
+      return;
+    }
+
+    if (numericMarks < 0 || numericMarks > 10) {
+      toast.error("Assignment mark must be between 0 and 10");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await gradeSubmission(submission._id, { marks: numericMarks });
+      toast.success("Assignment mark uploaded");
+      setEditingSubmissionMarks((prev) => ({
+        ...prev,
+        [submission._id]: false,
+      }));
+      setSubmissionMarks((prev) => {
+        const updatedMarks = { ...prev };
+        delete updatedMarks[submission._id];
+        return updatedMarks;
+      });
+      await fetchData();
+    } catch (error) {
+      toast.error(
+        error?.response?.data?.message || "Failed to upload assignment mark",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveInternalMarks = async () => {
+    if (!selectedMarksYear) {
+      toast.error("Please select a year");
+      return;
+    }
+
+    if (!selectedMarksStudentId) {
+      toast.error("Please select a student");
+      return;
+    }
+
+    if (!selectedMarksSubject) {
+      toast.error("Please select a subject");
+      return;
+    }
+
+    const markPayload = Object.fromEntries(
+      Object.entries(marksForm).map(([key, value]) => [
+        key,
+        value === "" ? null : Number(value),
+      ]),
+    );
+
+    if (
+      Object.values(markPayload).some(
+        (value) => value !== null && Number.isNaN(value),
+      )
+    ) {
+      toast.error("Please enter valid internal and semester marks");
+      return;
+    }
+
+    if (
+      [
+        markPayload.internalOneMark,
+        markPayload.internalTwoMark,
+        markPayload.internalThreeMark,
+      ].some((value) => value !== null && (value < 0 || value > 50))
+    ) {
+      toast.error("Internal marks must be between 0 and 50");
+      return;
+    }
+
+    if (
+      markPayload.semesterMark !== null &&
+      (markPayload.semesterMark < 0 || markPayload.semesterMark > 100)
+    ) {
+      toast.error("Semester mark must be between 0 and 100");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await updateStudent(selectedMarksStudentId, {
+        ...markPayload,
+        subject: selectedMarksSubject,
+        semester: selectedMarksSemester,
+      });
+      toast.success(
+        isUpdatingAcademicMarks
+          ? "Internal and semester marks updated"
+          : "Internal and semester marks added",
+      );
+      setMarksEditMode(false);
+      await fetchData();
+    } catch (error) {
+      toast.error(
+        error?.response?.data?.message || "Failed to upload marks",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getAttendanceSummary = (records) => {
+    const total = records.length;
+    const present = records.filter(
+      (record) => normalizeFilterValue(record.status) === "present",
+    ).length;
+    const attendancePercentage =
+      total > 0 ? Number(((present / total) * 100).toFixed(2)) : 0;
+
+    return {
+      total,
+      present,
+      attendancePercentage,
+    };
+  };
+
+  const getStudentStaffAttendanceRecords = (student) => {
+    const assignedSubjectNames = subjects
+      .map((subject) => subject.subjectName)
+      .filter(Boolean)
+      .map(normalizeFilterValue);
+
+    return attendance.filter(
+      (record) =>
+        String(record.studentId?._id || record.studentId) ===
+          String(student._id) &&
+        assignedSubjectNames.includes(normalizeFilterValue(record.subject)),
+    );
   };
 
   // Calculate student marks and attendance
@@ -452,29 +763,38 @@ export default function StaffDashboard() {
     const studentSubmissions = submissions.filter(
       (submission) => String(submission.studentId._id) === String(student._id),
     );
+    const studentStaffAttendanceRecords =
+      getStudentStaffAttendanceRecords(student);
+    const staffAttendanceSummary = getAttendanceSummary(
+      studentStaffAttendanceRecords,
+    );
+    const subjectWiseAttendance = subjects
+      .map((subject) => {
+        const subjectRecords = studentStaffAttendanceRecords.filter(
+          (record) =>
+            normalizeFilterValue(record.subject) ===
+            normalizeFilterValue(subject.subjectName),
+        );
+
+        return {
+          subjectId: subject._id,
+          subjectName: subject.subjectName,
+          ...getAttendanceSummary(subjectRecords),
+        };
+      })
+      .filter((subject) => subject.total > 0);
 
     // Get marks for different education levels
     const tenthMarks = student.tenthMarkPercentage || 0;
     const twelfthMarks = student.twelfthMarkPercentage || 0;
     const ugMarks = student.ugMarkPercentage || 0;
 
-    // Calculate attendance (based on submission percentage)
-    const totalAssignments = assignments.filter(
-      (assignment) =>
-        assignment.department === student.department &&
-        assignment.yearOfStudy === student.yearOfStudy,
-    ).length;
-
-    const submissionPercentage =
-      totalAssignments > 0
-        ? ((studentSubmissions.length / totalAssignments) * 100).toFixed(2)
-        : 0;
-
     return {
       tenthMarks: parseFloat(tenthMarks),
       twelfthMarks: parseFloat(twelfthMarks),
       ugMarks: parseFloat(ugMarks),
-      attendancePercentage: parseFloat(submissionPercentage),
+      attendancePercentage: staffAttendanceSummary.attendancePercentage,
+      subjectWiseAttendance,
       totalSubmissions: studentSubmissions.length,
     };
   };
@@ -521,6 +841,14 @@ export default function StaffDashboard() {
     if (!matchesYear) return false;
     return true;
   });
+  const selectedMarksStudentSubmissions = submissions.filter(
+    (submission) =>
+      selectedMarksStudentId &&
+      String(submission.studentId?._id) === String(selectedMarksStudentId) &&
+      (!selectedMarksSubject ||
+        normalizeFilterValue(submission.assignmentId?.subject) ===
+          normalizeFilterValue(selectedMarksSubject)),
+  );
 
   useEffect(() => {
     setCurrentPage(1);
@@ -557,6 +885,11 @@ export default function StaffDashboard() {
   );
   const totalPages = Math.ceil(filteredAssignments.length / itemsPerPage);
 
+  const getSectionCardClass = (section) =>
+    `hover:-translate-y-1 transition shadow-md hover:shadow-xl cursor-pointer ${
+      activeSection === section ? "ring-2 ring-primary" : ""
+    }`;
+
   return (
     <>
       <Toaster position="top-right" closeButton richColors />
@@ -580,70 +913,128 @@ export default function StaffDashboard() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid md:grid-cols-4 gap-4">
-          <Card className="hover:-translate-y-1 transition shadow-md hover:shadow-xl">
-            <CardHeader className="flex justify-between flex-row items-center">
-              <CardTitle className="text-sm">Total Students</CardTitle>
-              <Users size={18} />
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">{students.length}</p>
-              <p className="text-xs text-muted-foreground">Active students</p>
-            </CardContent>
+        <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
+          <Card className={getSectionCardClass("students")}>
+            <button
+              type="button"
+              className="w-full text-left"
+              onClick={() => setActiveSection("students")}
+            >
+              <CardHeader className="flex justify-between flex-row items-center">
+                <CardTitle className="text-sm">Total Students</CardTitle>
+                <Users size={18} />
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold">{students.length}</p>
+                <p className="text-xs text-muted-foreground">Active students</p>
+              </CardContent>
+            </button>
           </Card>
 
-          <Card className="hover:-translate-y-1 transition shadow-md hover:shadow-xl">
-            <CardHeader className="flex justify-between flex-row items-center">
-              <CardTitle className="text-sm">Subjects</CardTitle>
-              <BookOpen size={18} />
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">{subjects.length}</p>
-              <p className="text-xs text-muted-foreground">
-                Available subjects
-              </p>
-            </CardContent>
+          <Card className={getSectionCardClass("subjects")}>
+            <button
+              type="button"
+              className="w-full text-left"
+              onClick={() => setActiveSection("subjects")}
+            >
+              <CardHeader className="flex justify-between flex-row items-center">
+                <CardTitle className="text-sm">Subjects</CardTitle>
+                <BookOpen size={18} />
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold">{subjects.length}</p>
+                <p className="text-xs text-muted-foreground">
+                  Available subjects
+                </p>
+              </CardContent>
+            </button>
           </Card>
 
-          <Card className="hover:-translate-y-1 transition shadow-md hover:shadow-xl">
-            <CardHeader className="flex justify-between flex-row items-center">
-              <CardTitle className="text-sm">Assignments</CardTitle>
-              <FileText size={18} />
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">{assignments.length}</p>
-              <p className="text-xs text-muted-foreground">Total assignments</p>
-            </CardContent>
+          <Card className={getSectionCardClass("assignments")}>
+            <button
+              type="button"
+              className="w-full text-left"
+              onClick={() => setActiveSection("assignments")}
+            >
+              <CardHeader className="flex justify-between flex-row items-center">
+                <CardTitle className="text-sm">Assignments</CardTitle>
+                <FileText size={18} />
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold">{assignments.length}</p>
+                <p className="text-xs text-muted-foreground">
+                  Total assignments
+                </p>
+              </CardContent>
+            </button>
           </Card>
 
-          <Card className="hover:-translate-y-1 transition shadow-md hover:shadow-xl">
-            <CardHeader className="flex justify-between flex-row items-center">
-              <CardTitle className="text-sm">Submissions</CardTitle>
-              <Send size={18} />
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">{submissions.length}</p>
-              <p className="text-xs text-muted-foreground">
-                Student submissions
-              </p>
-            </CardContent>
+          <Card className={getSectionCardClass("submissions")}>
+            <button
+              type="button"
+              className="w-full text-left"
+              onClick={() => setActiveSection("submissions")}
+            >
+              <CardHeader className="flex justify-between flex-row items-center">
+                <CardTitle className="text-sm">Submissions</CardTitle>
+                <Send size={18} />
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold">{submissions.length}</p>
+                <p className="text-xs text-muted-foreground">
+                  Student submissions
+                </p>
+              </CardContent>
+            </button>
           </Card>
 
-          <Card className="hover:-translate-y-1 transition shadow-md hover:shadow-xl">
-            <CardHeader className="flex justify-between flex-row items-center">
-              <CardTitle className="text-sm">Attendance Records</CardTitle>
-              <Users size={18} />
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">{attendance.length}</p>
-              <p className="text-xs text-muted-foreground">Total records</p>
-            </CardContent>
+          <Card className={getSectionCardClass("uploadMarks")}>
+            <button
+              type="button"
+              className="w-full text-left"
+              onClick={() => setActiveSection("uploadMarks")}
+            >
+              <CardHeader className="flex justify-between flex-row items-center">
+                <CardTitle className="text-sm">Upload Marks</CardTitle>
+                <Upload size={18} />
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold">
+                  {
+                    submissions.filter(
+                      (submission) => submission.status !== "graded",
+                    ).length
+                  }
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Marks pending
+                </p>
+              </CardContent>
+            </button>
+          </Card>
+
+          <Card className={getSectionCardClass("attendance")}>
+            <button
+              type="button"
+              className="w-full text-left"
+              onClick={() => setActiveSection("attendance")}
+            >
+              <CardHeader className="flex justify-between flex-row items-center">
+                <CardTitle className="text-sm">Attendance Records</CardTitle>
+                <Users size={18} />
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold">{attendance.length}</p>
+                <p className="text-xs text-muted-foreground">Total records</p>
+              </CardContent>
+            </button>
           </Card>
         </div>
 
         {/* Main Content Grid */}
         <div className="grid md:grid-cols-2 gap-6">
           {/* Students Section */}
+          {activeSection === "students" && (
           <Card>
             <CardHeader>
               <CardTitle>Students</CardTitle>
@@ -760,8 +1151,10 @@ export default function StaffDashboard() {
               </div>
             </CardContent>
           </Card>
+          )}
 
           {/* Subjects Section */}
+          {activeSection === "subjects" && (
           <Card>
             <CardHeader>
               <CardTitle>Available Subjects</CardTitle>
@@ -790,10 +1183,13 @@ export default function StaffDashboard() {
               </div>
             </CardContent>
           </Card>
+          )}
         </div>
 
         {/* Assignment Form and List */}
         <div className="space-y-6">
+          {(activeSection === "assignments" || showStudentDetails) && (
+            <>
           {/* Create Assignment Button */}
           <div className="flex justify-between items-center">
             <h2 className="text-2xl font-bold">Assignments</h2>
@@ -987,7 +1383,7 @@ export default function StaffDashboard() {
           {/* Student Details Modal */}
           {showStudentDetails && selectedStudent && (
             <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50 backdrop-blur-sm p-4">
-              <Card className="w-full max-w-xl relative">
+              <Card className="w-full max-w-xl max-h-[90vh] relative flex flex-col">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1001,7 +1397,7 @@ export default function StaffDashboard() {
                   <CardTitle>Student Details</CardTitle>
                 </CardHeader>
 
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 overflow-y-auto pr-3">
                   <div className="space-y-3">
                     <div>
                       <Label className="text-xs text-muted-foreground">
@@ -1104,6 +1500,38 @@ export default function StaffDashboard() {
                                 value={stats.attendancePercentage}
                                 className="mt-2"
                               />
+                              {stats.subjectWiseAttendance.length > 0 ? (
+                                <div className="mt-3 space-y-2">
+                                  {stats.subjectWiseAttendance.map(
+                                    (subject) => (
+                                      <div
+                                        key={
+                                          subject.subjectId ||
+                                          subject.subjectName
+                                        }
+                                        className="rounded border p-2"
+                                      >
+                                        <div className="mb-1 flex items-center justify-between gap-3 text-sm">
+                                          <span className="font-medium">
+                                            {subject.subjectName}
+                                          </span>
+                                          <span className="text-muted-foreground">
+                                            {subject.attendancePercentage}%
+                                          </span>
+                                        </div>
+                                        <Progress
+                                          value={subject.attendancePercentage}
+                                        />
+                                      </div>
+                                    ),
+                                  )}
+                                </div>
+                              ) : (
+                                <p className="mt-2 text-sm text-muted-foreground">
+                                  No attendance records for your assigned
+                                  subjects.
+                                </p>
+                              )}
                             </div>
 
                             <div>
@@ -1288,8 +1716,352 @@ export default function StaffDashboard() {
               )}
             </CardContent>
           </Card>
+            </>
+          )}
+
+          {/* Upload Marks Section */}
+          {activeSection === "uploadMarks" && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Upload Marks</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-4">
+                <div className="space-y-2">
+                  <Label>Year</Label>
+                  <Select
+                    value={selectedMarksYear}
+                    onValueChange={handleMarksYearChange}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select year" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {marksYearOptions.map((year) => (
+                        <SelectItem key={year} value={year}>
+                          {year}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Student</Label>
+                  <Select
+                    value={selectedMarksStudentId}
+                    onValueChange={handleMarksStudentChange}
+                    disabled={!selectedMarksYear}
+                  >
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={
+                          selectedMarksYear
+                            ? "Select student"
+                            : "Select year first"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {students
+                        .filter(
+                          (student) =>
+                            getYearNumber(student.yearOfStudy) ===
+                            getYearNumber(selectedMarksYear),
+                        )
+                        .map((student) => (
+                          <SelectItem key={student._id} value={student._id}>
+                            {[student.firstName, student.lastName]
+                              .filter(Boolean)
+                              .join(" ")}{" "}
+                            - {student.rollNumber || "No roll"}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Semester</Label>
+                  <Select
+                    value={selectedMarksSemester}
+                    onValueChange={handleMarksSemesterChange}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select semester" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {marksSemesterOptions.map((semester) => (
+                        <SelectItem key={semester} value={semester}>
+                          {semester}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Subject</Label>
+                  <Select
+                    value={selectedMarksSubject}
+                    onValueChange={setSelectedMarksSubject}
+                    disabled={!selectedMarksYear || !selectedMarksSemester}
+                  >
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={
+                          selectedMarksYear && selectedMarksSemester
+                            ? "Select subject"
+                            : "Select year and semester first"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {marksSubjects.length > 0 ? (
+                        marksSubjects.map((subject) => (
+                          <SelectItem
+                            key={subject._id}
+                            value={subject.subjectName}
+                          >
+                            {subject.subjectName}
+                          </SelectItem>
+                        ))
+                    ) : (
+                      <div className="p-2 text-sm text-muted-foreground">
+                          No subjects for this year and semester
+                      </div>
+                    )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <h3 className="font-semibold">Internal and Semester Marks</h3>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      if (isUpdatingAcademicMarks && !marksEditMode) {
+                        setMarksEditMode(true);
+                        return;
+                      }
+
+                      handleSaveInternalMarks();
+                    }}
+                    disabled={
+                      loading ||
+                      !selectedMarksYear ||
+                      !selectedMarksStudentId ||
+                      !selectedMarksSubject
+                    }
+                  >
+                    {isUpdatingAcademicMarks && !marksEditMode
+                      ? "Update"
+                      : isUpdatingAcademicMarks
+                        ? "Save Changes"
+                        : "Add Marks"}
+                  </Button>
+                  {isUpdatingAcademicMarks && marksEditMode && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setMarksEditMode(false);
+                        setMarksForm({
+                          internalOneMark:
+                            selectedAcademicMarks?.internalOneMark ?? "",
+                          internalTwoMark:
+                            selectedAcademicMarks?.internalTwoMark ?? "",
+                          internalThreeMark:
+                            selectedAcademicMarks?.internalThreeMark ?? "",
+                          semesterMark:
+                            selectedAcademicMarks?.semesterMark ?? "",
+                        });
+                      }}
+                      disabled={loading}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-4">
+                  <div className="space-y-1">
+                    <Label>Internal 1</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="50"
+                      value={marksForm.internalOneMark}
+                      disabled={isUpdatingAcademicMarks && !marksEditMode}
+                      onChange={(e) =>
+                        handleMarksFormChange(
+                          "internalOneMark",
+                          e.target.value,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Internal 2</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="50"
+                      value={marksForm.internalTwoMark}
+                      disabled={isUpdatingAcademicMarks && !marksEditMode}
+                      onChange={(e) =>
+                        handleMarksFormChange(
+                          "internalTwoMark",
+                          e.target.value,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Internal 3</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="50"
+                      value={marksForm.internalThreeMark}
+                      disabled={isUpdatingAcademicMarks && !marksEditMode}
+                      onChange={(e) =>
+                        handleMarksFormChange(
+                          "internalThreeMark",
+                          e.target.value,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Sem Mark</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={marksForm.semesterMark}
+                      disabled={isUpdatingAcademicMarks && !marksEditMode}
+                      onChange={(e) =>
+                        handleMarksFormChange("semesterMark", e.target.value)
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <h3 className="mb-4 font-semibold">Assignment Marks</h3>
+                {selectedMarksStudentId ? (
+                  selectedMarksStudentSubmissions.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Assignment</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Current</TableHead>
+                            <TableHead>New Mark</TableHead>
+                            <TableHead className="text-right">
+                              Action
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {selectedMarksStudentSubmissions.map((submission) => {
+                            const hasSubmittedMark =
+                              submission.marks !== null &&
+                              submission.marks !== undefined;
+                            const isEditingSubmissionMark =
+                              Boolean(editingSubmissionMarks[submission._id]);
+
+                            return (
+                              <TableRow key={submission._id}>
+                                <TableCell>
+                                  {submission.assignmentId?.title ||
+                                    "Assignment"}
+                                </TableCell>
+                                <TableCell className="capitalize">
+                                  {submission.status}
+                                </TableCell>
+                                <TableCell>
+                                  {hasSubmittedMark ? submission.marks : "-"}
+                                </TableCell>
+                                <TableCell>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    max="10"
+                                    className="w-28"
+                                    value={
+                                      submissionMarks[submission._id] ??
+                                      submission.marks ??
+                                      ""
+                                    }
+                                    disabled={
+                                      hasSubmittedMark &&
+                                      !isEditingSubmissionMark
+                                    }
+                                    onChange={(e) =>
+                                      handleSubmissionMarkChange(
+                                        submission._id,
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={() => {
+                                      if (
+                                        hasSubmittedMark &&
+                                        !isEditingSubmissionMark
+                                      ) {
+                                        setEditingSubmissionMarks((prev) => ({
+                                          ...prev,
+                                          [submission._id]: true,
+                                        }));
+                                        return;
+                                      }
+
+                                      handleUploadSubmissionMark(submission);
+                                    }}
+                                    disabled={loading}
+                                  >
+                                    {hasSubmittedMark &&
+                                    !isEditingSubmissionMark
+                                      ? "Update"
+                                      : hasSubmittedMark
+                                        ? "Save"
+                                        : "Upload"}
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <p className="text-center text-muted-foreground">
+                      No submissions found for this student
+                    </p>
+                  )
+                ) : (
+                  <p className="text-center text-muted-foreground">
+                    Select a student to upload assignment marks
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+          )}
 
           {/* Submissions Section */}
+          {activeSection === "submissions" && (
           <Card>
             <CardHeader>
               <CardTitle>Student Submissions</CardTitle>
@@ -1304,6 +2076,7 @@ export default function StaffDashboard() {
                         <TableHead>Assignment</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Submission Date</TableHead>
+                        <TableHead>File</TableHead>
                         <TableHead>Marks</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1334,6 +2107,29 @@ export default function StaffDashboard() {
                             ).toLocaleDateString()}
                           </TableCell>
                           <TableCell>
+                            {submission.submissionUrl ? (
+                              <Button
+                                asChild
+                                variant="outline"
+                                size="sm"
+                                className="gap-2"
+                              >
+                                <a
+                                  href={getAssignmentFileUrl(
+                                    submission.submissionUrl,
+                                  )}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  <Eye size={14} />
+                                  Open PDF
+                                </a>
+                              </Button>
+                            ) : (
+                              "-"
+                            )}
+                          </TableCell>
+                          <TableCell>
                             {submission.marks !== null ? submission.marks : "-"}
                           </TableCell>
                         </TableRow>
@@ -1348,8 +2144,10 @@ export default function StaffDashboard() {
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Attendance Section */}
+          {activeSection === "attendance" && (
           <Card>
             <CardHeader className="flex justify-between flex-row items-center">
               <CardTitle>Mark Attendance</CardTitle>
@@ -1363,7 +2161,7 @@ export default function StaffDashboard() {
             <CardContent>
               {showAttendanceForm && (
                 <div className="fixed inset-0 bg-black/40 flex justify-center items-center z-50 backdrop-blur-sm p-4">
-                  <Card className="w-full max-w-2xl relative">
+                  <Card className="w-full max-w-4xl relative">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -1378,8 +2176,27 @@ export default function StaffDashboard() {
                     </CardHeader>
 
                     <CardContent className="space-y-4">
-                      <div className="grid grid-cols-4 gap-4">
-                        <div className="space-y-1">
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                        <div className="min-w-0 space-y-1">
+                          <Label>Semester</Label>
+                          <Select
+                            value={attendanceSemester}
+                            onValueChange={handleAttendanceSemesterChange}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Select Semester" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {attendanceSemesterOptions.map((semester) => (
+                                <SelectItem key={semester} value={semester}>
+                                  Sem {semester}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="min-w-0 space-y-1">
                           <Label>Date</Label>
                           <Input
                             type="date"
@@ -1407,13 +2224,13 @@ export default function StaffDashboard() {
                           </Select>
                         </div>
 
-                        <div className="space-y-1">
+                        <div className="min-w-0 space-y-1">
                           <Label>Period</Label>
                           <Select
                             value={attendancePeriod}
                             onValueChange={setAttendancePeriod}
                           >
-                            <SelectTrigger>
+                            <SelectTrigger className="w-full">
                               <SelectValue placeholder="Select Period" />
                             </SelectTrigger>
                             <SelectContent>
@@ -1429,24 +2246,39 @@ export default function StaffDashboard() {
                           </Select>
                         </div>
 
-                        <div className="space-y-1">
+                        <div className="min-w-0 space-y-1">
                           <Label>Subject</Label>
                           <Select
                             value={attendanceSubject}
                             onValueChange={setAttendanceSubject}
+                            disabled={!attendanceSemester}
                           >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select Subject" />
+                            <SelectTrigger className="w-full">
+                              <SelectValue
+                                placeholder={
+                                  attendanceSemester
+                                    ? "Select Subject"
+                                    : "Select semester first"
+                                }
+                              />
                             </SelectTrigger>
                             <SelectContent>
-                              {subjects.map((subject) => (
-                                <SelectItem
-                                  key={subject._id}
-                                  value={subject.subjectName}
-                                >
-                                  {subject.subjectName}
-                                </SelectItem>
-                              ))}
+                              {attendanceSubjects.length > 0 ? (
+                                attendanceSubjects.map((subject) => (
+                                  <SelectItem
+                                    key={subject._id}
+                                    value={subject.subjectName}
+                                  >
+                                    {subject.subjectName}
+                                  </SelectItem>
+                                ))
+                              ) : (
+                                <div className="p-2 text-sm text-muted-foreground">
+                                  {attendanceSemester
+                                    ? "No subjects for this semester"
+                                    : "Select semester first"}
+                                </div>
+                              )}
                             </SelectContent>
                           </Select>
                         </div>
@@ -1550,7 +2382,7 @@ export default function StaffDashboard() {
                     </CardHeader>
 
                     <CardContent className="space-y-4">
-                      <div className="space-y-1">
+                        <div className="min-w-0 space-y-1">
                         <Label>Student</Label>
                         <p className="text-sm font-medium">
                           {editingAttendance.studentId?.firstName}{" "}
@@ -1575,6 +2407,16 @@ export default function StaffDashboard() {
                             Period {editingAttendance.period || "-"}
                           </p>
                         </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">
+                            Semester
+                          </Label>
+                          <p className="font-medium">
+                            {editingAttendance.semester
+                              ? `Sem ${editingAttendance.semester}`
+                              : "-"}
+                          </p>
+                        </div>
                       </div>
 
                       <div className="space-y-1">
@@ -1583,7 +2425,7 @@ export default function StaffDashboard() {
                           value={editAttendanceStatus}
                           onValueChange={setEditAttendanceStatus}
                         >
-                          <SelectTrigger>
+                            <SelectTrigger className="w-full">
                             <SelectValue placeholder="Select Status" />
                           </SelectTrigger>
                           <SelectContent>
@@ -1620,6 +2462,7 @@ export default function StaffDashboard() {
                       <TableRow>
                         <TableHead>Student</TableHead>
                         <TableHead>Subject</TableHead>
+                        <TableHead>Semester</TableHead>
                         <TableHead>Date</TableHead>
                         <TableHead>Period</TableHead>
                         <TableHead>Status</TableHead>
@@ -1634,6 +2477,9 @@ export default function StaffDashboard() {
                             {record.studentId.lastName}
                           </TableCell>
                           <TableCell>{record.subject}</TableCell>
+                          <TableCell>
+                            {record.semester ? `Sem ${record.semester}` : "-"}
+                          </TableCell>
                           <TableCell>
                             {new Date(record.date).toLocaleDateString()}
                           </TableCell>
@@ -1672,6 +2518,7 @@ export default function StaffDashboard() {
               )}
             </CardContent>
           </Card>
+          )}
         </div>
       </div>
     </>

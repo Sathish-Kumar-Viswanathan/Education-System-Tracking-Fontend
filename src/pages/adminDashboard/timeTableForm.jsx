@@ -5,7 +5,8 @@ import { getAllSubjects } from "../../services/subjects/subjects.axios";
 import { getStaffUsers } from "../../services/users/users.axios";
 
 const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-const periods = Array.from({ length: 8 }, (_, i) => i);
+const PERIODS_PER_DAY = 7;
+const MAX_SUBJECTS_PER_STAFF = 2;
 
 const inputClass =
   "w-full min-w-0 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900 transition focus:border-primary focus:ring-2 focus:ring-primary/20";
@@ -21,7 +22,6 @@ export default function TimetableForm() {
     { startTime: "02:00", endTime: "03:00" },
     { startTime: "04:00", endTime: "05:00" },
     { startTime: "05:30", endTime: "06:30" },
-    { startTime: "06:30", endTime: "07:30" },
   ];
 
   const [form, setForm] = useState({
@@ -54,7 +54,7 @@ export default function TimetableForm() {
         ]);
         setSubjects(subjectData);
         setStaff(staffData);
-      } catch (err) {
+      } catch {
         toast.error("Failed to load subjects or staff");
       }
     };
@@ -64,6 +64,32 @@ export default function TimetableForm() {
 
   const validateForm = () => {
     const newErrors = {};
+    const subjectsByStaff = new Map();
+
+    staff.forEach((member) => {
+      const assignedSubjects = member.assignedSubjects || [];
+      subjectsByStaff.set(
+        member._id,
+        new Set(
+          assignedSubjects
+            .filter(Boolean)
+            .filter(
+              (assignment) =>
+                assignment.yearOfStudy === form.yearOfStudy &&
+                assignment.semester === form.semester,
+            )
+            .map((assignment) => {
+              if (assignment.subject) {
+                return assignment.subject._id || assignment.subject;
+              }
+
+              return assignment._id || assignment;
+            })
+            .filter(Boolean),
+        ),
+      );
+    });
+
     if (!form.department.trim()) {
       newErrors.department = "Department is required";
     }
@@ -78,6 +104,11 @@ export default function TimetableForm() {
     }
 
     form.weekDays.forEach((dayObj, dayIndex) => {
+      if (dayObj.periods.length !== PERIODS_PER_DAY) {
+        newErrors[`periods-${dayIndex}`] =
+          `Each day must have ${PERIODS_PER_DAY} periods`;
+      }
+
       dayObj.periods.forEach((period, periodIndex) => {
         if (!period.subject) {
           newErrors[`subject-${dayIndex}-${periodIndex}`] =
@@ -89,6 +120,20 @@ export default function TimetableForm() {
         if (!period.startTime || !period.endTime) {
           newErrors[`time-${dayIndex}-${periodIndex}`] =
             "Both start and end time are required";
+        }
+
+        if (period.staff && period.subject) {
+          if (!subjectsByStaff.has(period.staff)) {
+            subjectsByStaff.set(period.staff, new Set());
+          }
+
+          const staffSubjects = subjectsByStaff.get(period.staff);
+          staffSubjects.add(period.subject);
+
+          if (staffSubjects.size > MAX_SUBJECTS_PER_STAFF) {
+            newErrors[`staff-${dayIndex}-${periodIndex}`] =
+              "A staff member can handle a maximum of 2 subjects per year and semester";
+          }
         }
       });
     });
@@ -141,7 +186,7 @@ export default function TimetableForm() {
       });
       setErrors({});
     } catch (err) {
-      toast.error("Could not create timetable");
+      toast.error(err?.response?.data?.message || "Could not create timetable");
     } finally {
       setLoading(false);
     }

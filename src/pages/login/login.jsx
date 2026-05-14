@@ -39,11 +39,9 @@ export default function Login() {
       localStorage.setItem("token", token);
       localStorage.setItem("role", role);
 
-      console.log(response);
-
       toast.success(message);
 
-      if (role === "staff") {
+      if (role === "staff" || role === "coordinator") {
         navigate("/staffDashboard");
       } else if (role === "student") {
         navigate("/studentDashboard");

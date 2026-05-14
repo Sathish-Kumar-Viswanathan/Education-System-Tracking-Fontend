@@ -24,3 +24,24 @@ export const updateUser = async (userId, userData) => {
   const response = await axiosInstance.put(`/users/update/${userId}`, userData);
   return response.data;
 };
+
+export const assignSubjectToStaff = async (
+  userId,
+  subjectId,
+  yearOfStudy,
+  semester,
+) => {
+  const response = await axiosInstance.put(
+    `/users/staff/${userId}/assign-subject`,
+    { subjectId, yearOfStudy, semester },
+  );
+  return response.data;
+};
+
+export const updateAssignedSubjectForStaff = async (userId, assignmentData) => {
+  const response = await axiosInstance.put(
+    `/users/staff/${userId}/update-assigned-subject`,
+    assignmentData,
+  );
+  return response.data;
+};

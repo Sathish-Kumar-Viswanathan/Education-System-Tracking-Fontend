@@ -40,6 +40,7 @@ export const getAttendanceByStaff = async (staffId, filters = {}) => {
   if (filters.date) params.append("date", filters.date);
   if (filters.studentId) params.append("studentId", filters.studentId);
   if (filters.subject) params.append("subject", filters.subject);
+  if (filters.semester) params.append("semester", filters.semester);
 
   const queryString = params.toString();
   const response = await axiosInstance.get(

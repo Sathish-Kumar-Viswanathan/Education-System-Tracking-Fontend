@@ -76,6 +76,38 @@ export const updateStudentProfileByUserId = async (userId, profileData) => {
   return response.data;
 };
 
+export const getStudentProfileUpdateRequests = async (filters = {}) => {
+  const params = new URLSearchParams();
+  if (filters.status) params.append("status", filters.status);
+
+  const queryString = params.toString();
+  const response = await axiosInstance.get(
+    queryString
+      ? `/students/profile-update-requests?${queryString}`
+      : "/students/profile-update-requests",
+  );
+  return response.data;
+};
+
+export const approveStudentProfileUpdateRequest = async (
+  requestId,
+  adminId,
+) => {
+  const response = await axiosInstance.put(
+    `/students/profile-update-requests/${requestId}/approve`,
+    { adminId },
+  );
+  return response.data;
+};
+
+export const rejectStudentProfileUpdateRequest = async (requestId, adminId) => {
+  const response = await axiosInstance.put(
+    `/students/profile-update-requests/${requestId}/reject`,
+    { adminId },
+  );
+  return response.data;
+};
+
 // Get student attendance details
 export const getStudentAttendanceDetails = async (studentId, filters = {}) => {
   const params = new URLSearchParams();
