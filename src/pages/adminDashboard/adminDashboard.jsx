@@ -159,6 +159,9 @@ export default function AdminDashboard() {
   const [selectedStudentDetails, setSelectedStudentDetails] = useState(null);
   const [selectedStudentAttendance, setSelectedStudentAttendance] =
     useState(null);
+  const [showStudentSubjectMarks, setShowStudentSubjectMarks] = useState(false);
+  const [selectedStudentMarksSemester, setSelectedStudentMarksSemester] =
+    useState("all");
   const [studentDetailsLoading, setStudentDetailsLoading] = useState(false);
   const [profileRequests, setProfileRequests] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -379,6 +382,8 @@ export default function AdminDashboard() {
   const handleViewStudentDetails = async (student) => {
     setSelectedStudentDetails(student);
     setSelectedStudentAttendance(null);
+    setShowStudentSubjectMarks(false);
+    setSelectedStudentMarksSemester("all");
 
     try {
       setStudentDetailsLoading(true);
@@ -396,6 +401,8 @@ export default function AdminDashboard() {
   const closeSelectedStudentDetails = () => {
     setSelectedStudentDetails(null);
     setSelectedStudentAttendance(null);
+    setShowStudentSubjectMarks(false);
+    setSelectedStudentMarksSemester("all");
   };
 
   const handleOpenSubjectAssign = async () => {
@@ -898,6 +905,65 @@ export default function AdminDashboard() {
           ? student.isDelete === false
           : student.isDelete === true,
     );
+
+  const formatMarkValue = (value) =>
+    value !== null && value !== undefined && value !== "" ? value : "-";
+
+  const formatSemesterLabel = (semester) => {
+    if (!semester) return "Not set";
+
+    const semesterValue = String(semester);
+    return semesterValue.toLowerCase().includes("sem")
+      ? semesterValue
+      : `Sem ${semesterValue}`;
+  };
+
+  const getTotalMark = (mark) => {
+    const values = [
+      mark.internalOneMark,
+      mark.internalTwoMark,
+      mark.internalThreeMark,
+      mark.semesterMark,
+    ];
+
+    return values.some(
+      (value) => value !== null && value !== undefined && value !== "",
+    )
+      ? values.reduce((total, value) => total + (Number(value) || 0), 0)
+      : "-";
+  };
+
+  const selectedStudentSubjectMarks = selectedStudentDetails
+    ? (selectedStudentDetails.academicMarks || []).length > 0
+      ? selectedStudentDetails.academicMarks
+      : [
+          {
+            subject: "Overall Marks",
+            semester: selectedStudentDetails.semester,
+            internalOneMark: selectedStudentDetails.internalOneMark,
+            internalTwoMark: selectedStudentDetails.internalTwoMark,
+            internalThreeMark: selectedStudentDetails.internalThreeMark,
+            semesterMark: selectedStudentDetails.semesterMark,
+          },
+        ]
+    : [];
+
+  const selectedStudentMarksSemesters = [
+    ...new Set(
+      selectedStudentSubjectMarks.map((mark) =>
+        mark.semester ? String(mark.semester) : "not-set",
+      ),
+    ),
+  ];
+
+  const filteredStudentSubjectMarks =
+    selectedStudentMarksSemester === "all"
+      ? selectedStudentSubjectMarks
+      : selectedStudentSubjectMarks.filter(
+          (mark) =>
+            (mark.semester ? String(mark.semester) : "not-set") ===
+            selectedStudentMarksSemester,
+        );
 
   const selectedSubjectAssignStaff = staffUsers.find(
     (staff) => staff._id === selectedStaffId,
@@ -2131,6 +2197,112 @@ export default function AdminDashboard() {
                         </p>
                       </div>
                     </div>
+
+                    <div className="mt-3 flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="gap-2"
+                        onClick={() =>
+                          setShowStudentSubjectMarks((current) => !current)
+                        }
+                      >
+                        <BookOpenCheck size={16} />
+                        {showStudentSubjectMarks
+                          ? "Hide Subject Marks"
+                          : "View Subject Marks"}
+                      </Button>
+                    </div>
+
+                    {showStudentSubjectMarks && (
+                      <div className="mt-4 rounded-lg border">
+                        <div className="flex flex-col gap-3 border-b bg-muted/30 px-3 py-2 md:flex-row md:items-center md:justify-between">
+                          <p className="font-semibold">Subject Wise Marks</p>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={
+                                selectedStudentMarksSemester === "all"
+                                  ? "default"
+                                  : "outline"
+                              }
+                              onClick={() =>
+                                setSelectedStudentMarksSemester("all")
+                              }
+                            >
+                              All Semesters
+                            </Button>
+                            {selectedStudentMarksSemesters.map((semester) => (
+                              <Button
+                                key={semester}
+                                type="button"
+                                size="sm"
+                                variant={
+                                  selectedStudentMarksSemester === semester
+                                    ? "default"
+                                    : "outline"
+                                }
+                                onClick={() =>
+                                  setSelectedStudentMarksSemester(semester)
+                                }
+                              >
+                                {formatSemesterLabel(
+                                  semester === "not-set" ? "" : semester,
+                                )}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Semester</TableHead>
+                                <TableHead>Subject Name</TableHead>
+                                <TableHead>Internal 1</TableHead>
+                                <TableHead>Internal 2</TableHead>
+                                <TableHead>Internal 3</TableHead>
+                                <TableHead>Semester Mark</TableHead>
+                                <TableHead>Total Mark</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {filteredStudentSubjectMarks.map((mark, index) => (
+                                <TableRow
+                                  key={`${mark.semester || "sem"}-${mark.subject || "marks"}-${index}`}
+                                >
+                                  <TableCell>
+                                    {formatSemesterLabel(mark.semester)}
+                                  </TableCell>
+                                  <TableCell className="font-medium">
+                                    {mark.subject ||
+                                      mark.subjectName ||
+                                      "Not assigned"}
+                                  </TableCell>
+                                  <TableCell>
+                                    {formatMarkValue(mark.internalOneMark)}
+                                  </TableCell>
+                                  <TableCell>
+                                    {formatMarkValue(mark.internalTwoMark)}
+                                  </TableCell>
+                                  <TableCell>
+                                    {formatMarkValue(mark.internalThreeMark)}
+                                  </TableCell>
+                                  <TableCell>
+                                    {formatMarkValue(mark.semesterMark)}
+                                  </TableCell>
+                                  <TableCell className="font-semibold">
+                                    {getTotalMark(mark)}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="mt-4 grid gap-3 md:grid-cols-4">
                       <div className="rounded-lg border p-3">
